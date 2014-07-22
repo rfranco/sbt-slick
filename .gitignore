@@ -1,0 +1,9 @@
+# Ignore all dotfiles...
+.*
+# except for
+!.gitignore
+!.travis.yml
+
+#Ignore
+target/
+dist/

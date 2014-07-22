@@ -1,0 +1,1 @@
+addSbtPlugin("com.typesafe.sbt" %% "sbt-slick" % sys.props("project.version"))
