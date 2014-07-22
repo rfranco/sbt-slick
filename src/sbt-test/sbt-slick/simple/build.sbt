@@ -1,5 +1,12 @@
 lazy val root = (project in file(".")).enablePlugins(SbtSlick)
 
-libraryDependencies += "com.h2database" % "h2" % "1.3.170"
+libraryDependencies ++= Seq(
+  "com.typesafe.slick" %% "slick" % "2.1.0-RC2",
+  "com.h2database" % "h2" % "1.3.170"
+)
 
-SlickKeys.url := "jdbc:h2:target/db/test;AUTO_SERVER=TRUE"
+excludeFilter in Slick := "*.COMPANies"
+
+SlickKeys.driver := "org.h2.Driver"
+
+SlickKeys.url := "jdbc:h2:mem:test;INIT=runscript from 'src/main/sql/create.sql'"

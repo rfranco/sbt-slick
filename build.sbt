@@ -4,7 +4,7 @@ organization := "com.typesafe.sbt"
 
 name := "sbt-slick"
 
-libraryDependencies += "com.typesafe.slick" %% "slick" % "2.1.0-RC2"
+libraryDependencies += "com.typesafe.slick" %% "slick-codegen" % "2.1.0-RC2"
 
 scalacOptions += "-deprecation"
 

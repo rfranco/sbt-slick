@@ -1,2 +1,4 @@
+# check if the file gets created
 > clean
-> update
+> slickCodeGen
+$ exists src/main/scala/root/Tables.scala
