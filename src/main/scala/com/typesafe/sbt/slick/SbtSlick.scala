@@ -1,28 +1,32 @@
 package com.typesafe.sbt.slick
 
+import scala.slick.codegen.SourceCodeGenerator
+import scala.slick.driver._
+import scala.slick.jdbc.JdbcBackend
 import scala.slick.{model => m}
-import slick.codegen.SourceCodeGenerator
-import slick.driver._
-import slick.jdbc.JdbcBackend
 import sbt.Keys._
 import sbt._
 import sbt.classpath.ClasspathUtilities
 
 object Import {
 
-  val Slick = settingKey[Unit]("Slick Table")
+  type Model = m.Model
+
+  val slick = settingKey[Unit]("Slick Table")
 
   object SlickKeys {
 
     val url = settingKey[String]("Database URL")
     val user = settingKey[Option[String]]("Database username")
     val password = settingKey[Option[String]]("Database password")
-    val driver = settingKey[String]("Database driver class name")
+    val jdbcDriver = settingKey[String]("Database driver class name")
 
     val imports = settingKey[Seq[String]]("Imports")
     val pkg = settingKey[String]("Package")
+    val sourceName = SettingKey[String]("Source Name")
 
-    val codegen = settingKey[m.Model => SourceCodeGenerator]("Factory for code generator")
+    val sourceCodegen = settingKey[Model => SourceCodeGenerator]("Factory for code generator")
+    val packageCodegen = settingKey[String => String]("Factory for package code generator")
     private[slick] val slickCodeGen = taskKey[Unit]("Generate code")
   }
 
@@ -32,7 +36,7 @@ object SbtSlick extends AutoPlugin {
 
   val autoImport = Import
 
-  import Import._
+  import com.typesafe.sbt.slick.Import._
 
   override val projectSettings = Seq(
     SlickKeys.user := None,
@@ -40,14 +44,16 @@ object SbtSlick extends AutoPlugin {
 
     SlickKeys.pkg := organization.value,
     SlickKeys.imports := Nil,
+    SlickKeys.sourceName := "Tables",
 
-    SlickKeys.codegen := {
-      new BasicSourceGen(_)
+    SlickKeys.sourceCodegen := { model: Model =>
+      new SourceCodeGenerator(model)
     },
+    SlickKeys.packageCodegen := packageCodegen.value,
     SlickKeys.slickCodeGen := generateCode.value,
 
-    includeFilter in Slick := NothingFilter,
-    excludeFilter in Slick := NothingFilter
+    includeFilter in slick := NothingFilter,
+    excludeFilter in slick := NothingFilter
   )
 
   private val driverByName = Map(
@@ -60,12 +66,12 @@ object SbtSlick extends AutoPlugin {
   )
 
   private lazy val jdbcProfile = Def.task[JdbcProfile] {
-    val driver = SlickKeys.driver.value
+    val driver = SlickKeys.jdbcDriver.value
     driverByName.get(driver).get // give Error
   }
 
   private lazy val database = Def.task[JdbcBackend#Database] {
-    val driver = SlickKeys.driver.value
+    val driver = SlickKeys.jdbcDriver.value
     val profile = jdbcProfile.value
 
     val fc = fullClasspath.in(Runtime).value
@@ -84,40 +90,42 @@ object SbtSlick extends AutoPlugin {
     val db = database.value
     val profile = jdbcProfile.value
 
-    val include = includeFilter.in(Slick).value
-    val exclude = excludeFilter.in(Slick).value
+    val include = includeFilter.in(slick).value
+    val exclude = excludeFilter.in(slick).value
 
     db.withSession { implicit session =>
       val tables = profile.defaultTables
 
-      tables.filter { t => import t.name._
-        val fullName = catalog.map(_ + ".").getOrElse("") + schema.map(_ + ".").getOrElse("") + name
+      val filteredTables = tables.filter { t => import t.name._
+        val fullName = schema.map(_ + ".").getOrElse("") + name
         val table = new File(fullName)
-        include.accept(table) || !exclude.accept(table)
+        println(fullName)
+        println( include.accept(table))
+        println(!exclude.accept(table))
+        include.accept(table) && !exclude.accept(table)
       }
 
-      profile.createModel(Some(tables))
+      profile.createModel(Some(filteredTables))
     }
   }
 
   private lazy val generateCode = Def.task {
     val model = generateModel.value
-    val gen = SlickKeys.codegen.value(model)
-
+    val gen = SlickKeys.sourceCodegen.value(model)
+    val code = gen.indent(gen.code)
+    val content = SlickKeys.packageCodegen.value(code)
     val folder = scalaSource.in(Compile).value
     val pkg = SlickKeys.pkg.value
-    val name = "Tables"
-    val imports = SlickKeys.imports.value
-    val code = gen.indent(gen.code)
-
-    val content = packageCode(code, pkg, name, imports)
+    val name = SlickKeys.sourceName.value
     val file = folder / pkg.replace(".", "/") / (name + ".scala")
-
     IO.write(file, content)
   }
 
-  private def packageCode(code: String, pkg: String, name: String, imports: Seq[String] = Nil): String = s"""
-package $pkg
+  private lazy val packageCodegen = Def.setting { code: String =>
+    val pkg = SlickKeys.pkg.value
+    val name = SlickKeys.sourceName.value
+    val imports = SlickKeys.imports.value
+    s"""package $pkg
 import scala.slick.driver.JdbcProfile
 ${imports.map(i => s"import $i").mkString("\n")}
 /** Slick data model trait for extension, choice of backend or usage in the cake pattern. (Make sure to initialize this late.) */
@@ -126,6 +134,7 @@ trait $name {
   import profile.simple._
   $code
 }"""
+  }
 
 }
 
